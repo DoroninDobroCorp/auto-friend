@@ -10,6 +10,7 @@ from .cadence import Cadence
 from .llm import LLM
 from .conversation import ConversationEngine
 from .platforms.telegram_adapter import TelegramAdapter
+from .platforms.telegram_user_adapter import TelegramUserAdapter
 
 
 def main():
@@ -24,13 +25,19 @@ def main():
     llm = LLM(api_key=cfg.openai_api_key, base_url=cfg.openai_base_url)
     engine = ConversationEngine(llm)
 
-    # At least Telegram adapter if token present
-    if not cfg.telegram_bot_token:
-        print("TELEGRAM_BOT_TOKEN is not set. Please fill .env to run Telegram bot.")
-        return 1
-
-    tg = TelegramAdapter(cfg, cadence, engine)
-    tg.run()
+    # Prefer user-mode (MTProto via Telethon) if credentials are present
+    if cfg.tg_api_id and cfg.tg_api_hash:
+        print("Starting Telegram in USER mode (Telethon)...")
+        tg_user = TelegramUserAdapter(cfg, cadence, engine)
+        tg_user.run()
+    else:
+        # Fallback: Bot mode
+        if not cfg.telegram_bot_token:
+            print("Neither TG_API_ID/TG_API_HASH nor TELEGRAM_BOT_TOKEN is set. Please fill .env.")
+            return 1
+        print("Starting Telegram in BOT mode...")
+        tg = TelegramAdapter(cfg, cadence, engine)
+        tg.run()
     return 0
 
 

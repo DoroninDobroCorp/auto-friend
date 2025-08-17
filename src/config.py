@@ -25,6 +25,11 @@ class Config:
     quiet_hours_end: int    # 0-23
     max_daily_messages_per_user: int
 
+    # Telegram user-mode (MTProto)
+    tg_api_id: Optional[int]
+    tg_api_hash: Optional[str]
+    tg_session: Optional[str]
+
     @staticmethod
     def load() -> "Config":
         return Config(
@@ -35,4 +40,14 @@ class Config:
             quiet_hours_start=getenv_int("QUIET_HOURS_START", 22),
             quiet_hours_end=getenv_int("QUIET_HOURS_END", 8),
             max_daily_messages_per_user=getenv_int("MAX_DAILY_MESSAGES_PER_USER", 3),
+            # Accept both TG_* and TELEGRAM_* names
+            tg_api_id=(
+                int(os.getenv("TG_API_ID")) if os.getenv("TG_API_ID")
+                else (int(os.getenv("TELEGRAM_API_ID")) if os.getenv("TELEGRAM_API_ID") else None)
+            ),
+            tg_api_hash=(
+                os.getenv("TG_API_HASH") if os.getenv("TG_API_HASH")
+                else os.getenv("TELEGRAM_API_HASH")
+            ),
+            tg_session=os.getenv("TG_SESSION"),
         )
