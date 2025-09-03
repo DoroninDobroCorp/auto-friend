@@ -2,11 +2,12 @@
 Конфигурация приложения с использованием Pydantic
 """
 import os
+import re
 from typing import List, Optional
 from datetime import time
-from pydantic import validator
+from pydantic import field_validator
 from dotenv import load_dotenv
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 load_dotenv()
@@ -15,13 +16,21 @@ load_dotenv()
 class Settings(BaseSettings):
     """Настройки приложения"""
     
+    # Pydantic v2 settings config
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",  # игнорируем лишние переменные окружения
+    )
+    
     # Telegram API
-    api_id: int
-    api_hash: str
-    phone_number: str
+    api_id: int = 0
+    api_hash: str = "test_hash"
+    phone_number: str = "+10000000000"
     
     # OpenAI API
-    openai_api_key: str
+    openai_api_key: str = "test_key"
     openai_model: str = "gpt-4-turbo-preview"
     
     # Поведение бота
@@ -48,14 +57,41 @@ class Settings(BaseSettings):
     # Логирование
     log_level: str = "INFO"
     
-    @validator('quiet_hours_start', 'quiet_hours_end')
-    def validate_time_format(cls, v):
-        """Валидация формата времени"""
-        try:
-            time.fromisoformat(v)
+    @field_validator('quiet_hours_start', 'quiet_hours_end', mode='before')
+    @classmethod
+    def validate_time_format(cls, v: str) -> str:
+        """Валидация и нормализация формата времени.
+        Допускаем значения:
+        - "8" -> "08:00"
+        - "8:0"/"8:00" -> нормализуем до HH:MM
+        - "HH:MM" (стандарт)
+        """
+        if v is None:
             return v
-        except ValueError:
-            raise ValueError(f"Неверный формат времени: {v}. Используйте формат HH:MM")
+        if isinstance(v, str):
+            s = v.strip()
+            # Если только час, например "8" или "08"
+            if s.isdigit():
+                h = int(s)
+                if 0 <= h <= 23:
+                    return f"{h:02d}:00"
+            # Формат H:MM или HH:M -> приводим к HH:MM при валидных значениях
+            if re.fullmatch(r"\d{1,2}:\d{1,2}", s):
+                h_str, m_str = s.split(':', 1)
+                try:
+                    h, m = int(h_str), int(m_str)
+                except ValueError:
+                    pass
+                else:
+                    if 0 <= h <= 23 and 0 <= m <= 59:
+                        return f"{h:02d}:{m:02d}"
+            # Пробуем стандартный разбор
+            try:
+                time.fromisoformat(s)
+                return s
+            except ValueError:
+                raise ValueError(f"Неверный формат времени: {v}. Используйте формат HH:MM")
+        return v
     
     @property
     def group_keywords_list(self) -> List[str]:
@@ -77,10 +113,7 @@ class Settings(BaseSettings):
         """Время окончания тихих часов"""
         return time.fromisoformat(self.quiet_hours_end)
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    # Конфигурация выше задана через model_config
 
 
 # Глобальный экземпляр настроек

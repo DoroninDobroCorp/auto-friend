@@ -6,7 +6,10 @@ import logging
 from typing import List, Dict, Any, Optional
 import openai
 from tenacity import retry, stop_after_attempt, wait_exponential
-from ..config import settings
+try:
+    from ..config import settings  # when importing as src.nlp.llm_client
+except Exception:
+    from config import settings  # when importing as nlp.llm_client in tests
 import httpx
 
 

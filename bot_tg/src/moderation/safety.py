@@ -4,7 +4,10 @@
 import re
 from typing import List, Tuple, Optional
 import logging
-from ..config import settings
+try:
+    from ..config import settings  # when importing as src.moderation.safety
+except Exception:
+    from config import settings  # when importing as moderation.safety in tests
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +17,22 @@ class ContentModerator:
     
     def __init__(self):
         self.forbidden_topics = settings.forbidden_topics_list
+        # Простая морфологическая поддержка для русских словоформ запрещённых тем
+        stems = {
+            'политика': r'\bполитик\w*\b',
+            'спам': r'\bспам\w*\b',
+            'реклама': r'\bреклам\w*\b',
+            'токсичность': r'\bтоксичн\w*\b',
+            'nsfw': r'\bnsfw\b',
+        }
+        self.forbidden_topic_patterns = [
+            stems.get(t.lower(), rf"\\b{re.escape(t.lower())}\\b")
+            for t in self.forbidden_topics
+        ]
         self.toxic_patterns = [
             r'\b(идиот|дебил|тупой|дурак|кретин)\b',
             r'\b(ненавижу|убью|убить|смерть)\b',
-            r'\b(спам|реклама|купить|продать)\b',
-            r'\b(политика|выборы|президент|правительство)\b',
+            # токсичность не включает спам/рекламу и общие темы
             r'\b(секс|порно|nsfw|18\+)\b',
             r'\b(наркотики|алкоголь|курить)\b',
         ]
@@ -35,46 +49,45 @@ class ContentModerator:
         Returns:
             Tuple[bool, str, Optional[str]]: (is_safe, reason, suggested_replacement)
         """
-        # if not text or len(text.strip()) == 0:
-        #     return True, "empty_message", None
+        if not text or len(text.strip()) == 0:
+            return True, "empty_message", None
             
-        # text_lower = text.lower()
+        text_lower = text.lower()
         
-        # # Проверка на запрещённые темы
-        # for topic in self.forbidden_topics:
-        #     if topic.lower() in text_lower:
-        #         return False, f"forbidden_topic: {topic}", self._suggest_replacement(text, topic)
+        # Проверка на запрещённые темы (с учётом словоформ)
+        for pattern in self.forbidden_topic_patterns:
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                return False, "forbidden_topic", self._suggest_replacement(text, "forbidden_topic")
         
-        # # Проверка на токсичные паттерны
-        # for pattern in self.toxic_patterns:
-        #     if re.search(pattern, text_lower, re.IGNORECASE):
-        #         return False, "toxic_content", self._suggest_replacement(text, pattern)
+        # Проверка на токсичные паттерны
+        for pattern in self.toxic_patterns:
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                return False, "toxic_content", self._suggest_replacement(text, pattern)
         
-        # # Проверка на спам
-        # spam_score = 0
-        # for pattern in self.spam_patterns:
-        #     if re.search(pattern, text_lower, re.IGNORECASE):
-        #         spam_score += 1
+        # Проверка на спам
+        spam_score = 0
+        for pattern in self.spam_patterns:
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                spam_score += 1
         
-        # if spam_score >= 2:
-        #     return False, "spam_detected", self._suggest_replacement(text, "spam")
+        if spam_score >= 2:
+            return False, "spam_detected", self._suggest_replacement(text, "spam")
         
-        # # Проверка на длину (слишком короткие сообщения могут быть спамом)
-        # if len(text.strip()) < 3:
-        #     return False, "too_short", None
+        # Проверка на длину (слишком короткие сообщения могут быть спамом)
+        if len(text.strip()) < 3:
+            return False, "too_short", None
         
-        # # Проверка на повторяющиеся символы
-        # if self._has_repeated_chars(text):
-        #     return False, "repeated_chars", None
+        # Проверка на повторяющиеся символы
+        if self._has_repeated_chars(text):
+            return False, "repeated_chars", None
         
         return True, "safe", None
     
     def _has_repeated_chars(self, text: str, threshold: int = 5) -> bool:
         """Проверить на повторяющиеся символы"""
-        for char in set(text):
-            if char != ' ' and text.count(char) >= threshold:
-                return True
-        return False
+        # Считаем повтором только подряд идущие символы (не просто частоту в тексте)
+        pattern = rf"(\S)\1{{{threshold-1},}}"
+        return re.search(pattern, text) is not None
     
     def _suggest_replacement(self, original_text: str, issue: str) -> str:
         """Предложить замену для проблемного текста"""
@@ -98,24 +111,24 @@ class ContentModerator:
         Returns:
             bool: True если сообщение подходит для ответа
         """
-        if not text or len(text.strip()) < settings.min_group_message_length:
+        if not text:
             return False
         
-        # Проверка безопасности
+        # Проверка безопасности первична
         is_safe, reason, _ = self.check_message_safety(text)
         if not is_safe:
             logger.info(f"Group message filtered: {reason}")
             return False
         
-        # Проверка ключевых слов
+        # Проверка ключевых слов (игнорируем минимальную длину, если ключевое слово найдено)
         keywords_to_check = keywords or settings.group_keywords_list
         text_lower = text.lower()
-        
         for keyword in keywords_to_check:
             if keyword.lower() in text_lower:
                 return True
         
-        return False
+        # Если ключевых слов нет — применяем порог длины
+        return len(text.strip()) >= settings.min_group_message_length
     
     def sanitize_message(self, text: str) -> str:
         """Очистить сообщение от потенциально опасного контента"""

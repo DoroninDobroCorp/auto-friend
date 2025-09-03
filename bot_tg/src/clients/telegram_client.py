@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any
 from telethon import TelegramClient, events
 from telethon.tl.types import User, Chat, Message
 
-from src.reports.generator import ReportGenerator
+from src.reports_generator import ReportGenerator
 from ..config import settings
 from ..memory.store import store
 from ..dialog.manager import dialog_manager

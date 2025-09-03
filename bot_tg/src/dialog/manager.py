@@ -6,10 +6,16 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import random
-from ..config import settings
-from ..memory.store import store
-from ..nlp.llm_client import llm_client
-from ..moderation.safety import moderator
+try:
+    from ..config import settings  # when importing as src.dialog.manager
+    from ..memory.store import store
+    from ..nlp.llm_client import llm_client
+    from ..moderation.safety import moderator
+except Exception:
+    from config import settings  # when importing as dialog.manager in tests
+    from memory.store import store
+    from nlp.llm_client import llm_client
+    from moderation.safety import moderator
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +99,7 @@ class DialogManager:
         """Форматировать историю сообщений для LLM"""
         formatted = []
         
-        for msg in reversed(messages):  # Обратный порядок для хронологии
+        for msg in messages:  # Сохраняем исходный порядок как в истории
             role = "user" if not msg['is_outgoing'] else "assistant"
             formatted.append({
                 "role": role,
@@ -106,6 +112,8 @@ class DialogManager:
         """Проверить, не повторяется ли сообщение"""
         if user_id not in self.last_messages:
             self.last_messages[user_id] = []
+            # Сохраняем первое сообщение и не считаем его повтором
+            self.last_messages[user_id].append(message_text)
             return False
         
         # Проверяем схожесть с последними сообщениями
